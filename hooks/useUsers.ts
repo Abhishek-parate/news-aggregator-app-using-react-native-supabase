@@ -1,16 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Profile, UserAnalytics, ViewsAnalytics, CategoryAnalytics, BookmarkAnalytics } from '../types';
+import { Profile, UserAnalytics, CategoryAnalytics, ViewsAnalytics, BookmarkAnalytics } from '../types';
 import { format, subDays } from 'date-fns';
 
 export const useUsers = () => {
-  const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userAnalytics, setUserAnalytics] = useState<UserAnalytics>({
+    newUsers: 0,
+    totalUsers: 0,
+    activeUsers: 0,
+  });
+  const [categoryViews, setCategoryViews] = useState<CategoryAnalytics[]>([]);
+  const [dailyViews, setDailyViews] = useState<ViewsAnalytics[]>([]);
+  const [bookmarkStats, setBookmarkStats] = useState<BookmarkAnalytics[]>([]);
 
-  // Get all users
-  const getUsers = async () => {
+  useEffect(() => {
+    fetchUsers();
+    fetchAnalytics();
+  }, []);
+
+  const fetchUsers = async () => {
     try {
       setLoading(true);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -20,357 +33,204 @@ export const useUsers = () => {
         throw error;
       }
 
-      setUsers(data);
-      return data;
+      if (data) {
+        setUsers(data);
+      }
     } catch (error) {
       console.error('Error fetching users:', error);
-      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  // Get a single user
-  const getUser = async (userId: string) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Error fetching user:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Update a user
-  const updateUser = async (
-    userId: string,
-    updates: Partial<Omit<Profile, 'id' | 'created_at'>>
-  ) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Error updating user:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Delete a user (admin only)
-  const deleteUser = async (userId: string) => {
+  const fetchAnalytics = async () => {
     try {
       setLoading(true);
       
-      // Delete profile first (due to foreign key constraints)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
-
-      if (profileError) {
-        throw profileError;
-      }
-
-      // Delete auth user
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-      if (authError) {
-        throw authError;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Toggle user role (admin/user)
-  const toggleUserRole = async (userId: string, currentRole: 'admin' | 'user') => {
-    try {
-      setLoading(true);
-      const newRole = currentRole === 'admin' ? 'user' : 'admin';
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          role: newRole,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Error toggling user role:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get user analytics
-  const getUserAnalytics = async (): Promise<UserAnalytics> => {
-    try {
-      setLoading(true);
-      
-      // Get total users
-      const { count: totalUsers, error: totalError } = await supabase
+      // Get total user count
+      const { count: totalUsers, error: countError } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true });
 
-      if (totalError) {
-        throw totalError;
+      if (countError) {
+        throw countError;
       }
 
-      // Get new users in the last 7 days
-      const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-      const { count: newUsers, error: newError } = await supabase
+      // Get new users (last 7 days)
+      const lastWeek = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+      const { count: newUsers, error: newUsersError } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
-        .gte('created_at', sevenDaysAgo);
+        .gte('created_at', lastWeek);
 
-      if (newError) {
-        throw newError;
+      if (newUsersError) {
+        throw newUsersError;
       }
 
-      // Get active users (users who viewed content in the last 7 days)
-      const { count: activeUsers, error: activeError } = await supabase
+      // Get active users (users who viewed content in last 7 days)
+      const { data: activeUsersData, error: activeUsersError } = await supabase
         .from('user_feed_views')
-        .select('user_id', { count: 'exact', head: true })
-        .gte('created_at', sevenDaysAgo)
-        .limit(1);
+        .select('user_id')
+        .gte('created_at', lastWeek)
+        .limit(1000);
 
-      if (activeError) {
-        throw activeError;
+      if (activeUsersError) {
+        throw activeUsersError;
       }
 
-      return {
+      const activeUsers = activeUsersData 
+        ? new Set(activeUsersData.map(u => u.user_id)).size 
+        : 0;
+
+      // Get category view stats
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('user_feed_views')
+        .select(`
+          news_id,
+          news:news(
+            feed_id,
+            feed:feeds(
+              category_id,
+              category:categories(name)
+            )
+          )
+        `)
+        .limit(1000);
+
+      if (categoryError) {
+        throw categoryError;
+      }
+
+      if (categoryData) {
+        const categoryMap = new Map<string, number>();
+        
+        categoryData.forEach((view: any) => {
+          const categoryName = view.news?.feed?.category?.name;
+          if (categoryName) {
+            categoryMap.set(
+              categoryName, 
+              (categoryMap.get(categoryName) || 0) + 1
+            );
+          }
+        });
+        
+        const categoryStats: CategoryAnalytics[] = Array.from(categoryMap.entries())
+          .map(([category, count]) => ({ category, count }))
+          .sort((a, b) => b.count - a.count);
+        
+        setCategoryViews(categoryStats);
+      }
+
+      // Get daily views (last 7 days)
+      const { data: viewsData, error: viewsError } = await supabase
+        .from('user_feed_views')
+        .select('created_at')
+        .gte('created_at', lastWeek)
+        .limit(1000);
+
+      if (viewsError) {
+        throw viewsError;
+      }
+
+      if (viewsData) {
+        const viewsMap = new Map<string, number>();
+        
+        // Initialize last 7 days
+        for (let i = 0; i < 7; i++) {
+          const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
+          viewsMap.set(date, 0);
+        }
+        
+        viewsData.forEach((view: any) => {
+          const date = format(new Date(view.created_at), 'yyyy-MM-dd');
+          viewsMap.set(date, (viewsMap.get(date) || 0) + 1);
+        });
+        
+        const viewsStats: ViewsAnalytics[] = Array.from(viewsMap.entries())
+          .map(([date, count]) => ({ date, count }))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        setDailyViews(viewsStats);
+      }
+      
+      // Get bookmark stats (last 7 days)
+      const { data: bookmarkData, error: bookmarkError } = await supabase
+        .from('bookmarks')
+        .select('created_at')
+        .gte('created_at', lastWeek)
+        .limit(1000);
+
+      if (bookmarkError) {
+        throw bookmarkError;
+      }
+
+      if (bookmarkData) {
+        const bookmarkMap = new Map<string, number>();
+        
+        // Initialize last 7 days
+        for (let i = 0; i < 7; i++) {
+          const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
+          bookmarkMap.set(date, 0);
+        }
+        
+        bookmarkData.forEach((bookmark: any) => {
+          const date = format(new Date(bookmark.created_at), 'yyyy-MM-dd');
+          bookmarkMap.set(date, (bookmarkMap.get(date) || 0) + 1);
+        });
+        
+        const bookmarkStats: BookmarkAnalytics[] = Array.from(bookmarkMap.entries())
+          .map(([date, count]) => ({ date, count }))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        setBookmarkStats(bookmarkStats);
+      }
+
+      // Set user analytics
+      setUserAnalytics({
         totalUsers: totalUsers || 0,
         newUsers: newUsers || 0,
         activeUsers: activeUsers || 0,
-      };
+      });
     } catch (error) {
-      console.error('Error getting user analytics:', error);
-      throw error;
+      console.error('Error fetching analytics:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Get view analytics over time
-  const getViewsAnalytics = async (days: number = 30): Promise<ViewsAnalytics[]> => {
+  const updateUserRole = async (userId: string, role: 'user' | 'admin') => {
     try {
       setLoading(true);
       
-      // Generate array of dates
-      const dates = Array.from({ length: days }, (_, i) => {
-        const date = subDays(new Date(), i);
-        return format(date, 'yyyy-MM-dd');
-      }).reverse();
-      
-      // Get views for each date
-      const analytics = await Promise.all(
-        dates.map(async (date) => {
-          const nextDate = format(new Date(date + 'T23:59:59'), 'yyyy-MM-dd');
-          
-          const { count, error } = await supabase
-            .from('user_feed_views')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', date)
-            .lt('created_at', nextDate);
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role })
+        .eq('id', userId);
 
-          if (error) {
-            throw error;
-          }
-
-          return {
-            date,
-            count: count || 0,
-          };
-        })
-      );
-
-      return analytics;
-    } catch (error) {
-      console.error('Error getting views analytics:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get category analytics
-  const getCategoryAnalytics = async (): Promise<CategoryAnalytics[]> => {
-    try {
-      setLoading(true);
-      
-      // Get categories with view counts
-      const { data: categories, error: catError } = await supabase
-        .from('categories')
-        .select('id, name');
-
-      if (catError) {
-        throw catError;
+      if (error) {
+        throw error;
       }
 
-      if (!categories || categories.length === 0) {
-        return [];
-      }
-
-      const analytics = await Promise.all(
-        categories.map(async (category) => {
-          // Get feeds in this category
-          const { data: feeds, error: feedError } = await supabase
-            .from('feeds')
-            .select('id')
-            .eq('category_id', category.id);
-
-          if (feedError) {
-            throw feedError;
-          }
-
-          if (!feeds || feeds.length === 0) {
-            return {
-              category: category.name,
-              count: 0,
-            };
-          }
-
-          const feedIds = feeds.map(feed => feed.id);
-
-          // Get news items from these feeds
-          const { data: news, error: newsError } = await supabase
-            .from('news')
-            .select('id')
-            .in('feed_id', feedIds);
-
-          if (newsError) {
-            throw newsError;
-          }
-
-          if (!news || news.length === 0) {
-            return {
-              category: category.name,
-              count: 0,
-            };
-          }
-
-          const newsIds = news.map(item => item.id);
-
-          // Count views for these news items
-          const { count, error: viewError } = await supabase
-            .from('user_feed_views')
-            .select('*', { count: 'exact', head: true })
-            .in('news_id', newsIds);
-
-          if (viewError) {
-            throw viewError;
-          }
-
-          return {
-            category: category.name,
-            count: count || 0,
-          };
-        })
-      );
-
-      return analytics.sort((a, b) => b.count - a.count);
-    } catch (error) {
-      console.error('Error getting category analytics:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get bookmark analytics over time
-  const getBookmarkAnalytics = async (days: number = 30): Promise<BookmarkAnalytics[]> => {
-    try {
-      setLoading(true);
+      // Refresh users
+      await fetchUsers();
       
-      // Generate array of dates
-      const dates = Array.from({ length: days }, (_, i) => {
-        const date = subDays(new Date(), i);
-        return format(date, 'yyyy-MM-dd');
-      }).reverse();
-      
-      // Get bookmarks for each date
-      const analytics = await Promise.all(
-        dates.map(async (date) => {
-          const nextDate = format(new Date(date + 'T23:59:59'), 'yyyy-MM-dd');
-          
-          const { count, error } = await supabase
-            .from('bookmarks')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', date)
-            .lt('created_at', nextDate);
-
-          if (error) {
-            throw error;
-          }
-
-          return {
-            date,
-            count: count || 0,
-          };
-        })
-      );
-
-      return analytics;
-    } catch (error) {
-      console.error('Error getting bookmark analytics:', error);
-      throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
   };
 
   return {
-    loading,
     users,
-    getUsers,
-    getUser,
-    updateUser,
-    deleteUser,
-    toggleUserRole,
-    getUserAnalytics,
-    getViewsAnalytics,
-    getCategoryAnalytics,
-    getBookmarkAnalytics,
+    loading,
+    userAnalytics,
+    categoryViews,
+    dailyViews,
+    bookmarkStats,
+    fetchUsers,
+    fetchAnalytics,
+    updateUserRole,
   };
 };
