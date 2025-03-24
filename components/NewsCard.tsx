@@ -1,237 +1,181 @@
 import React from 'react';
-import { View, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Image, TouchableOpacity, Dimensions } from 'react-native';
 import { router } from 'expo-router';
+import { Text } from './ui/Text';
+import { Card } from './ui/Card';
+import { BookmarkButton } from './BookmarkButton';
 import { NewsWithFeed } from '../types';
-import Card from './ui/Card';
-import Text from './ui/Text';
-import { COLORS } from '../constants/colors';
 import { formatRelativeTime, truncateText, extractDomain } from '../lib/utils';
-import BookmarkButton from './BookmarkButton';
-import { Feather } from '@expo/vector-icons';
 
 interface NewsCardProps {
   item: NewsWithFeed;
-  compact?: boolean;
+  layout?: 'horizontal' | 'vertical' | 'compact';
   showCategory?: boolean;
-  onPress?: () => void;
-  onBookmarkToggle?: (id: number, isBookmarked: boolean) => void;
 }
 
-const NewsCard: React.FC<NewsCardProps> = ({
+export const NewsCard = ({
   item,
-  compact = false,
+  layout = 'vertical',
   showCategory = true,
-  onPress,
-  onBookmarkToggle,
-}) => {
-  const windowWidth = Dimensions.get('window').width;
-  
+}: NewsCardProps) => {
   const handlePress = () => {
-    if (onPress) {
-      onPress();
-    } else {
-      router.push(`/news/${item.id}`);
-    }
+    router.push(`/news/${item.id}`);
   };
 
-  const handleBookmarkToggle = (isBookmarked: boolean) => {
-    if (onBookmarkToggle) {
-      onBookmarkToggle(item.id, isBookmarked);
-    }
-  };
-
-  if (compact) {
+  if (layout === 'horizontal') {
     return (
       <TouchableOpacity
-        activeOpacity={0.7}
+        activeOpacity={0.8}
         onPress={handlePress}
-        style={styles.compactContainer}
+        className="mb-4"
       >
-        <Card variant="outlined" padding="small" style={styles.compactCard}>
-          <View style={styles.compactContent}>
+        <Card>
+          <View className="flex-row">
             {item.image_url ? (
               <Image
                 source={{ uri: item.image_url }}
-                style={styles.compactImage}
+                className="w-24 h-24 rounded-l-lg"
                 resizeMode="cover"
               />
             ) : (
-              <View style={[styles.compactImage, styles.placeholder]}>
-                <Feather name="image" size={20} color={COLORS.gray[400]} />
-              </View>
-            )}
-            
-            <View style={styles.compactTextContainer}>
-              <Text
-                variant="small"
-                weight="medium"
-                numberOfLines={2}
-                style={styles.compactTitle}
-              >
-                {item.title}
-              </Text>
-              
-              <View style={styles.compactMeta}>
-                <Text variant="caption" color={COLORS.gray[500]}>
-                  {item.feed?.title || extractDomain(item.url)} • {formatRelativeTime(item.published_at)}
+              <View className="w-24 h-24 bg-secondary rounded-l-lg items-center justify-center">
+                <Text variant="body-sm" className="text-primary font-rubik-medium">
+                  {item.feed.title.charAt(0)}
                 </Text>
               </View>
+            )}
+            <View className="flex-1 p-3">
+              {showCategory && (
+                <View className="flex-row items-center mb-1">
+                  <View
+                    className="h-2 w-2 rounded-full mr-1"
+                    style={{ backgroundColor: item.category?.color || '#11CBD7' }}
+                  />
+                  <Text variant="caption" className="text-gray-500">
+                    {item.category?.name || item.feed.title}
+                  </Text>
+                </View>
+              )}
+              <Text
+                numberOfLines={2}
+                weight="medium"
+                className="mb-1"
+              >
+                {truncateText(item.title, 60)}
+              </Text>
+              <View className="flex-row items-center justify-between mt-auto">
+                <Text variant="caption" className="text-gray-500">
+                  {formatRelativeTime(item.published_at)}
+                </Text>
+                <BookmarkButton
+                  newsId={item.id}
+                  isBookmarked={item.isBookmarked}
+                  size="small"
+                />
+              </View>
             </View>
-            
-            <BookmarkButton
-              isBookmarked={item.isBookmarked || false}
-              onToggle={handleBookmarkToggle}
-              size={18}
-              style={styles.compactBookmark}
-            />
           </View>
         </Card>
       </TouchableOpacity>
     );
   }
-  
+
+  if (layout === 'compact') {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={handlePress}
+        className="py-3 border-b border-gray-200"
+      >
+        <View className="flex-row items-center">
+          <View className="flex-1 pr-2">
+            <Text numberOfLines={2} weight="medium" className="mb-1">
+              {truncateText(item.title, 80)}
+            </Text>
+            <View className="flex-row items-center justify-between">
+              <Text variant="caption" className="text-gray-500">
+                {extractDomain(item.url)} • {formatRelativeTime(item.published_at)}
+              </Text>
+              <BookmarkButton
+                newsId={item.id}
+                isBookmarked={item.isBookmarked}
+                size="small"
+              />
+            </View>
+          </View>
+          {item.image_url && (
+            <Image
+              source={{ uri: item.image_url }}
+              className="w-16 h-16 rounded-md"
+              resizeMode="cover"
+            />
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  // Default vertical layout
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
+      activeOpacity={0.8}
       onPress={handlePress}
-      style={styles.container}
+      className="mb-5"
     >
-      <Card style={styles.card}>
-        <View style={styles.header}>
-          <Text variant="caption" color={COLORS.gray[500]}>
-            {formatRelativeTime(item.published_at)}
-          </Text>
-          
-          <BookmarkButton
-            isBookmarked={item.isBookmarked || false}
-            onToggle={handleBookmarkToggle}
-          />
-        </View>
-        
-        {item.image_url && (
+      <Card padding="none">
+        {item.image_url ? (
           <Image
             source={{ uri: item.image_url }}
-            style={styles.image}
+            className="w-full h-48 rounded-t-lg"
             resizeMode="cover"
           />
+        ) : (
+          <View className="w-full h-32 bg-secondary rounded-t-lg items-center justify-center">
+            <Text variant="h3" className="text-primary font-rubik-medium">
+              {item.feed.title.charAt(0)}
+            </Text>
+          </View>
         )}
-        
-        <View style={styles.content}>
-          <Text variant="h4" weight="semibold" style={styles.title}>
+        <View className="p-3">
+          {showCategory && (
+            <View className="flex-row items-center mb-2">
+              <View
+                className="h-2 w-2 rounded-full mr-1"
+                style={{ backgroundColor: item.category?.color || '#11CBD7' }}
+              />
+              <Text variant="caption" className="text-gray-500">
+                {item.category?.name || item.feed.title}
+              </Text>
+            </View>
+          )}
+          <Text
+            numberOfLines={2}
+            weight="medium"
+            variant="h6"
+            className="mb-2"
+          >
             {item.title}
           </Text>
-          
           {item.description && (
             <Text
-              variant="body"
-              color={COLORS.gray[600]}
-              style={styles.description}
-              numberOfLines={3}
+              numberOfLines={2}
+              variant="body-sm"
+              className="text-gray-600 mb-2"
             >
-              {truncateText(item.description, 150)}
+              {truncateText(item.description, 120)}
             </Text>
           )}
-          
-          <View style={styles.meta}>
-            {showCategory && item.category && (
-              <View
-                style={[
-                  styles.category,
-                  { backgroundColor: item.category.color || COLORS.primary },
-                ]}
-              >
-                <Text variant="caption" weight="medium" color={COLORS.white}>
-                  {item.category.name}
-                </Text>
-              </View>
-            )}
-            
-            <Text variant="small" color={COLORS.gray[600]}>
-              {item.feed?.title || extractDomain(item.url)}
+          <View className="flex-row items-center justify-between mt-1">
+            <Text variant="caption" className="text-gray-500">
+              {formatRelativeTime(item.published_at)}
             </Text>
+            <BookmarkButton
+              newsId={item.id}
+              isBookmarked={item.isBookmarked}
+            />
           </View>
         </View>
       </Card>
     </TouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 16,
-  },
-  card: {
-    overflow: 'hidden',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  image: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  content: {
-    flex: 1,
-  },
-  title: {
-    marginBottom: 8,
-  },
-  description: {
-    marginBottom: 12,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  category: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  // Compact styles
-  compactContainer: {
-    marginBottom: 8,
-  },
-  compactCard: {
-    flexDirection: 'row',
-  },
-  compactContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  compactImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 4,
-    marginRight: 12,
-  },
-  compactTextContainer: {
-    flex: 1,
-  },
-  compactTitle: {
-    marginBottom: 4,
-  },
-  compactMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  compactBookmark: {
-    marginLeft: 8,
-  },
-  placeholder: {
-    backgroundColor: COLORS.gray[200],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
-export default NewsCard;
