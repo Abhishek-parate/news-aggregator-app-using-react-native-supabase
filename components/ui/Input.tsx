@@ -1,143 +1,99 @@
-import React, { useState } from 'react';
+import React, { ReactNode, useState } from 'react';
 import {
   View,
   TextInput,
-  TextInputProps,
   Text,
-  StyleSheet,
   TouchableOpacity,
+  TextInputProps,
 } from 'react-native';
-import { COLORS } from '../../constants/colors';
-import { FONTS } from '../../constants/fonts';
-import { Feather } from '@expo/vector-icons';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
-  isPassword?: boolean;
-  containerStyle?: any;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
+  onPressRightIcon?: () => void;
 }
 
-const Input: React.FC<InputProps> = ({
+export const Input = ({
   label,
   error,
   leftIcon,
   rightIcon,
-  isPassword = false,
-  containerStyle,
-  style,
-  ...props
-}) => {
+  onPressRightIcon,
+  secureTextEntry,
+  className,
+  ...rest
+}: InputProps) => {
   const [isFocused, setIsFocused] = useState(false);
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(!secureTextEntry);
 
-  const togglePasswordVisibility = () => {
-    setIsPasswordVisible((prev) => !prev);
+  const handleFocus = () => {
+    setIsFocused(true);
+    if (rest.onFocus) {
+      rest.onFocus({} as any);
+    }
   };
 
-  const passwordIcon = isPasswordVisible ? (
-    <Feather name="eye-off" size={20} color={COLORS.gray[500]} />
-  ) : (
-    <Feather name="eye" size={20} color={COLORS.gray[500]} />
-  );
+  const handleBlur = () => {
+    setIsFocused(false);
+    if (rest.onBlur) {
+      rest.onBlur({} as any);
+    }
+  };
+
+  const togglePasswordVisibility = () => {
+    setIsPasswordVisible(!isPasswordVisible);
+  };
+
+  const getBorderColorClass = () => {
+    if (isFocused) return 'border-primary';
+    if (error) return 'border-accent';
+    return 'border-gray-300';
+  };
 
   return (
-    <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
-      
+    <View className={`mb-4 ${className || ''}`}>
+      {label && (
+        <Text className="text-gray-700 mb-1 font-rubik-medium">
+          {label}
+        </Text>
+      )}
       <View
-        style={[
-          styles.inputContainer,
-          isFocused && styles.focusedInput,
-          error && styles.errorInput,
-        ]}
+        className={`flex-row items-center border rounded-lg overflow-hidden
+                   ${getBorderColorClass()}
+                   ${leftIcon ? 'pl-3' : 'pl-4'}
+                   ${rightIcon || secureTextEntry ? 'pr-3' : 'pr-4'}
+                   py-2.5`}
       >
-        {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
-        
+        {leftIcon && <View className="mr-2">{leftIcon}</View>}
         <TextInput
-          style={[
-            styles.input,
-            leftIcon && { paddingLeft: 40 },
-            (rightIcon || isPassword) && { paddingRight: 40 },
-            style,
-          ]}
-          placeholderTextColor={COLORS.gray[400]}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          secureTextEntry={isPassword && !isPasswordVisible}
-          {...props}
+          className="flex-1 text-gray-800 font-rubik"
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          placeholderTextColor="#9CA3AF"
+          secureTextEntry={secureTextEntry && !isPasswordVisible}
+          {...rest}
         />
-        
-        {isPassword ? (
-          <TouchableOpacity
-            style={styles.rightIcon}
+        {rightIcon && (
+          <TouchableOpacity className="ml-2" onPress={onPressRightIcon}>
+            {rightIcon}
+          </TouchableOpacity>
+        )}
+        {secureTextEntry && (
+          <TouchableOpacity 
+            className="ml-2" 
             onPress={togglePasswordVisibility}
           >
-            {passwordIcon}
+            <Text>{isPasswordVisible ? '👁️' : '👁️‍🗨️'}</Text>
           </TouchableOpacity>
-        ) : (
-          rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>
         )}
       </View>
-      
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && (
+        <Text className="text-accent text-xs mt-1">
+          {error}
+        </Text>
+      )}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 16,
-    width: '100%',
-  },
-  label: {
-    fontSize: 14,
-    fontFamily: FONTS.medium,
-    color: COLORS.gray[700],
-    marginBottom: 6,
-  },
-  inputContainer: {
-    position: 'relative',
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.gray[300],
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-  },
-  focusedInput: {
-    borderColor: COLORS.primary,
-  },
-  errorInput: {
-    borderColor: COLORS.error,
-  },
-  input: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.gray[800],
-    width: '100%',
-  },
-  leftIcon: {
-    position: 'absolute',
-    left: 12,
-    top: 12,
-    zIndex: 1,
-  },
-  rightIcon: {
-    position: 'absolute',
-    right: 12,
-    top: 12,
-    zIndex: 1,
-  },
-  errorText: {
-    color: COLORS.error,
-    fontSize: 12,
-    fontFamily: FONTS.regular,
-    marginTop: 4,
-  },
-});
-
-export default Input;
