@@ -1,17 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { NewsWithFeed } from '../types';
+import { useAuth } from './useAuth';
 
-export const useBookmarks = (userId: string) => {
-  const [loading, setLoading] = useState(false);
+export const useBookmarks = () => {
   const [bookmarks, setBookmarks] = useState<NewsWithFeed[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const { user } = useAuth();
 
-  // Get all bookmarks for a user
-  const getBookmarks = async () => {
-    if (!userId) return [];
-    
+  useEffect(() => {
+    if (user) {
+      fetchBookmarks();
+    } else {
+      setBookmarks([]);
+      setLoading(false);
+    }
+  }, [user]);
+
+  const fetchBookmarks = async () => {
     try {
       setLoading(true);
+      
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData || !userData.user) {
+        setBookmarks([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('bookmarks')
         .select(`
@@ -22,148 +38,93 @@ export const useBookmarks = (userId: string) => {
             category:feeds(category:categories(*))
           )
         `)
-        .eq('user_id', userId)
+        .eq('user_id', userData.user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
         throw error;
       }
 
-      // Transform the data to match the NewsWithFeed type
-      const transformedData = data.map(item => ({
-        ...item.news,
-        isBookmarked: true,
-      })) as NewsWithFeed[];
-      
-      setBookmarks(transformedData);
-      return transformedData;
+      if (data) {
+        // Format bookmarks
+        const formattedBookmarks: NewsWithFeed[] = data.map((item: any) => ({
+          ...item.news,
+          feed: item.news.feed,
+          category: item.news.category,
+          isBookmarked: true,
+        }));
+
+        setBookmarks(formattedBookmarks);
+      }
     } catch (error) {
       console.error('Error fetching bookmarks:', error);
-      throw error;
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Add a bookmark
-  const addBookmark = async (newsId: number) => {
-    if (!userId) return;
-    
+  const toggleBookmark = async (newsId: number) => {
     try {
-      setLoading(true);
-      const { error } = await supabase
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData || !userData.user) {
+        return { error: 'User not authenticated' };
+      }
+
+      // Check if bookmark exists
+      const { data: existingBookmark } = await supabase
         .from('bookmarks')
-        .insert({
-          user_id: userId,
+        .select('*')
+        .eq('user_id', userData.user.id)
+        .eq('news_id', newsId)
+        .maybeSingle();
+
+      if (existingBookmark) {
+        // Remove bookmark
+        const { error } = await supabase
+          .from('bookmarks')
+          .delete()
+          .eq('id', existingBookmark.id);
+
+        if (error) {
+          throw error;
+        }
+
+        // Update local state
+        setBookmarks(bookmarks.filter((b) => b.id !== newsId));
+        
+        return { isBookmarked: false, error: null };
+      } else {
+        // Add bookmark
+        const { error } = await supabase.from('bookmarks').insert({
+          user_id: userData.user.id,
           news_id: newsId,
         });
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      // Update local state
-      await getBookmarks();
-      return true;
-    } catch (error) {
-      console.error('Error adding bookmark:', error);
-      throw error;
-    } finally {
-      setLoading(false);
+        // Refresh bookmarks
+        await fetchBookmarks();
+        
+        return { isBookmarked: true, error: null };
+      }
+    } catch (error: any) {
+      return { error: error.message };
     }
   };
 
-  // Remove a bookmark
-  const removeBookmark = async (newsId: number) => {
-    if (!userId) return;
-    
-    try {
-      setLoading(true);
-      const { error } = await supabase
-        .from('bookmarks')
-        .delete()
-        .eq('user_id', userId)
-        .eq('news_id', newsId);
-
-      if (error) {
-        throw error;
-      }
-
-      // Update local state
-      setBookmarks(bookmarks.filter(b => b.id !== newsId));
-      return true;
-    } catch (error) {
-      console.error('Error removing bookmark:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Toggle a bookmark (add if not exists, remove if exists)
-  const toggleBookmark = async (newsId: number) => {
-    if (!userId) return;
-    
-    try {
-      setLoading(true);
-      
-      // Check if bookmark exists
-      const { data, error } = await supabase
-        .from('bookmarks')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('news_id', newsId)
-        .maybeSingle();
-
-      if (error) {
-        throw error;
-      }
-
-      if (data) {
-        // Bookmark exists, remove it
-        return await removeBookmark(newsId);
-      } else {
-        // Bookmark doesn't exist, add it
-        return await addBookmark(newsId);
-      }
-    } catch (error) {
-      console.error('Error toggling bookmark:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Check if a news item is bookmarked
-  const isBookmarked = async (newsId: number) => {
-    if (!userId) return false;
-    
-    try {
-      const { data, error } = await supabase
-        .from('bookmarks')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('news_id', newsId)
-        .maybeSingle();
-
-      if (error) {
-        throw error;
-      }
-
-      return !!data;
-    } catch (error) {
-      console.error('Error checking bookmark status:', error);
-      throw error;
-    }
+  const refreshBookmarks = async () => {
+    setRefreshing(true);
+    await fetchBookmarks();
   };
 
   return {
-    loading,
     bookmarks,
-    getBookmarks,
-    addBookmark,
-    removeBookmark,
+    loading,
+    refreshing,
     toggleBookmark,
-    isBookmarked,
+    refreshBookmarks,
   };
 };
