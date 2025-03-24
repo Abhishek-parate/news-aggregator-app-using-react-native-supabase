@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Feed, Category, FeedWithCategory } from '../types';
-import { fetchRssFeed } from '../lib/rss-parser';
+import { fetchRssFeed, processAndSaveFeedItems } from '../lib/rss-parser';
 
-export const useFeeds = () => {
-  const [loading, setLoading] = useState(false);
+export const useFeeds = (categoryId?: number) => {
   const [feeds, setFeeds] = useState<FeedWithCategory[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const getFeeds = async () => {
+  useEffect(() => {
+    fetchFeeds();
+    fetchCategories();
+  }, [categoryId]);
+
+  const fetchFeeds = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('feeds')
         .select(`
           *,
@@ -19,73 +24,28 @@ export const useFeeds = () => {
         `)
         .order('title');
 
+      if (categoryId) {
+        query = query.eq('category_id', categoryId);
+      }
+
+      const { data, error } = await query;
+
       if (error) {
         throw error;
       }
 
-      setFeeds(data as FeedWithCategory[]);
-      return data as FeedWithCategory[];
+      if (data) {
+        setFeeds(data as FeedWithCategory[]);
+      }
     } catch (error) {
       console.error('Error fetching feeds:', error);
-      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const getFeedsByCategory = async (categoryId: number) => {
+  const fetchCategories = async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('feeds')
-        .select(`
-          *,
-          category:categories(*)
-        `)
-        .eq('category_id', categoryId)
-        .order('title');
-
-      if (error) {
-        throw error;
-      }
-
-      return data as FeedWithCategory[];
-    } catch (error) {
-      console.error('Error fetching feeds by category:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getFeed = async (id: number) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('feeds')
-        .select(`
-          *,
-          category:categories(*)
-        `)
-        .eq('id', id)
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      return data as FeedWithCategory;
-    } catch (error) {
-      console.error('Error fetching feed:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getCategories = async () => {
-    try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('categories')
         .select('*')
@@ -95,29 +55,25 @@ export const useFeeds = () => {
         throw error;
       }
 
-      setCategories(data);
-      return data;
+      if (data) {
+        setCategories(data);
+      }
     } catch (error) {
       console.error('Error fetching categories:', error);
-      throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
-  const createFeed = async (feed: Omit<Feed, 'id' | 'created_at' | 'updated_at'>) => {
+  const addFeed = async (feed: Partial<Feed>) => {
     try {
       setLoading(true);
       
-      // Validate the feed URL by trying to fetch it
-      await fetchRssFeed(feed.url);
+      // First check if the feed URL is valid and can be parsed
+      const items = await fetchRssFeed(feed.url || '');
       
+      // Insert feed into database
       const { data, error } = await supabase
         .from('feeds')
-        .insert({
-          ...feed,
-          active: true,
-        })
+        .insert(feed)
         .select()
         .single();
 
@@ -125,45 +81,43 @@ export const useFeeds = () => {
         throw error;
       }
 
-      return data;
-    } catch (error) {
-      console.error('Error creating feed:', error);
-      throw error;
+      if (data) {
+        // Process and save feed items
+        await processAndSaveFeedItems(data.id, items);
+        
+        // Refresh feeds
+        await fetchFeeds();
+        
+        return { data, error: null };
+      }
+      
+      return { data: null, error: null };
+    } catch (error: any) {
+      return { data: null, error: error.message };
     } finally {
       setLoading(false);
     }
   };
 
-  const updateFeed = async (
-    id: number,
-    updates: Partial<Omit<Feed, 'id' | 'created_at' | 'updated_at'>>
-  ) => {
+  const updateFeed = async (id: number, updates: Partial<Feed>) => {
     try {
       setLoading(true);
       
-      // If URL is being updated, validate it
-      if (updates.url) {
-        await fetchRssFeed(updates.url);
-      }
-      
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('feeds')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select()
-        .single();
+        .update(updates)
+        .eq('id', id);
 
       if (error) {
         throw error;
       }
 
-      return data;
-    } catch (error) {
-      console.error('Error updating feed:', error);
-      throw error;
+      // Refresh feeds
+      await fetchFeeds();
+      
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -172,6 +126,8 @@ export const useFeeds = () => {
   const deleteFeed = async (id: number) => {
     try {
       setLoading(true);
+      
+      // Delete feed
       const { error } = await supabase
         .from('feeds')
         .delete()
@@ -181,61 +137,60 @@ export const useFeeds = () => {
         throw error;
       }
 
-      return true;
-    } catch (error) {
-      console.error('Error deleting feed:', error);
-      throw error;
+      // Refresh feeds
+      await fetchFeeds();
+      
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
   };
 
-  const createCategory = async (category: Omit<Category, 'id' | 'created_at' | 'updated_at'>) => {
+  const addCategory = async (category: Partial<Category>) => {
     try {
       setLoading(true);
+      
       const { data, error } = await supabase
         .from('categories')
         .insert(category)
-        .select()
-        .single();
+        .select();
 
       if (error) {
         throw error;
       }
 
-      return data;
-    } catch (error) {
-      console.error('Error creating category:', error);
-      throw error;
+      // Refresh categories
+      await fetchCategories();
+      
+      return { data, error: null };
+    } catch (error: any) {
+      return { data: null, error: error.message };
     } finally {
       setLoading(false);
     }
   };
 
-  const updateCategory = async (
-    id: number,
-    updates: Partial<Omit<Category, 'id' | 'created_at' | 'updated_at'>>
-  ) => {
+  const updateCategory = async (id: number, updates: Partial<Category>) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      const { error } = await supabase
         .from('categories')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select()
-        .single();
+        .update(updates)
+        .eq('id', id);
 
       if (error) {
         throw error;
       }
 
-      return data;
-    } catch (error) {
-      console.error('Error updating category:', error);
-      throw error;
+      // Refresh categories
+      await fetchCategories();
+      
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -244,6 +199,8 @@ export const useFeeds = () => {
   const deleteCategory = async (id: number) => {
     try {
       setLoading(true);
+      
+      // Delete category
       const { error } = await supabase
         .from('categories')
         .delete()
@@ -253,28 +210,54 @@ export const useFeeds = () => {
         throw error;
       }
 
-      return true;
-    } catch (error) {
-      console.error('Error deleting category:', error);
-      throw error;
+      // Refresh categories
+      await fetchCategories();
+      
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshFeed = async (feedId: number) => {
+    try {
+      setLoading(true);
+      
+      // Get feed
+      const { data: feed, error: feedError } = await supabase
+        .from('feeds')
+        .select('*')
+        .eq('id', feedId)
+        .single();
+
+      if (feedError || !feed) {
+        throw feedError || new Error('Feed not found');
+      }
+
+      // Fetch and process items
+      const items = await fetchRssFeed(feed.url);
+      await processAndSaveFeedItems(feed.id, items);
+      
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
   };
 
   return {
-    loading,
     feeds,
     categories,
-    getFeeds,
-    getFeedsByCategory,
-    getFeed,
-    getCategories,
-    createFeed,
+    loading,
+    addFeed,
     updateFeed,
     deleteFeed,
-    createCategory,
+    addCategory,
     updateCategory,
     deleteCategory,
+    refreshFeed,
   };
 };
