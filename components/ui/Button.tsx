@@ -1,160 +1,101 @@
-import React from 'react';
-import { TouchableOpacity, TouchableOpacityProps, ActivityIndicator, View, Text } from 'react-native';
-import { COLORS } from '../../constants/colors';
-import { FONTS } from '../../constants/fonts';
+import React, { ReactNode } from 'react';
+import {
+  TouchableOpacity,
+  Text,
+  ActivityIndicator,
+  TouchableOpacityProps,
+} from 'react-native';
+
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends TouchableOpacityProps {
-  title: string;
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'success' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
-  fullWidth?: boolean;
+  children: ReactNode;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   loading?: boolean;
-  icon?: React.ReactNode;
+  fullWidth?: boolean;
+  icon?: ReactNode;
   iconPosition?: 'left' | 'right';
 }
 
-const Button: React.FC<ButtonProps> = ({
-  title,
+export const Button = ({
+  children,
   variant = 'primary',
   size = 'md',
-  fullWidth = false,
   loading = false,
+  fullWidth = false,
   icon,
   iconPosition = 'left',
   disabled,
-  style,
-  ...props
-}) => {
-  const getVariantStyles = () => {
-    switch (variant) {
-      case 'primary':
-        return {
-          backgroundColor: COLORS.primary,
-          borderColor: COLORS.primary,
-          textColor: COLORS.white,
-        };
-      case 'secondary':
-        return {
-          backgroundColor: COLORS.secondary,
-          borderColor: COLORS.secondary,
-          textColor: COLORS.primary,
-        };
-      case 'outline':
-        return {
-          backgroundColor: 'transparent',
-          borderColor: COLORS.primary,
-          textColor: COLORS.primary,
-        };
-      case 'danger':
-        return {
-          backgroundColor: COLORS.error,
-          borderColor: COLORS.error,
-          textColor: COLORS.white,
-        };
-      case 'success':
-        return {
-          backgroundColor: COLORS.success,
-          borderColor: COLORS.success,
-          textColor: COLORS.white,
-        };
-      case 'ghost':
-        return {
-          backgroundColor: 'transparent',
-          borderColor: 'transparent',
-          textColor: COLORS.primary,
-        };
-      default:
-        return {
-          backgroundColor: COLORS.primary,
-          borderColor: COLORS.primary,
-          textColor: COLORS.white,
-        };
-    }
+  className,
+  ...rest
+}: ButtonProps) => {
+  const variantClasses = {
+    primary: 'bg-primary',
+    secondary: 'bg-secondary',
+    outline: 'bg-transparent border border-primary',
+    ghost: 'bg-transparent',
+    danger: 'bg-accent',
   };
 
-  const getSizeStyles = () => {
-    switch (size) {
-      case 'sm':
-        return {
-          paddingVertical: 8,
-          paddingHorizontal: 16,
-          fontSize: 14,
-        };
-      case 'md':
-        return {
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          fontSize: 16,
-        };
-      case 'lg':
-        return {
-          paddingVertical: 16,
-          paddingHorizontal: 24,
-          fontSize: 18,
-        };
-      default:
-        return {
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          fontSize: 16,
-        };
-    }
+  const textVariantClasses = {
+    primary: 'text-white',
+    secondary: 'text-gray-800',
+    outline: 'text-primary',
+    ghost: 'text-primary',
+    danger: 'text-white',
   };
 
-  const variantStyles = getVariantStyles();
-  const sizeStyles = getSizeStyles();
+  const sizeClasses = {
+    sm: 'py-1.5 px-3 rounded-md',
+    md: 'py-2.5 px-4 rounded-lg',
+    lg: 'py-3 px-5 rounded-xl',
+  };
+
+  const textSizeClasses = {
+    sm: 'text-xs',
+    md: 'text-base',
+    lg: 'text-lg',
+  };
 
   return (
     <TouchableOpacity
-      activeOpacity={0.8}
+      activeOpacity={0.7}
+      className={`${disabled || loading ? 'opacity-70' : 'opacity-100'} 
+                  ${fullWidth ? 'w-full' : 'w-auto'} 
+                  ${sizeClasses[size]} 
+                  ${variantClasses[variant]} 
+                  flex flex-row items-center justify-center
+                  ${className || ''}`}
       disabled={disabled || loading}
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: 8,
-          borderWidth: variant !== 'ghost' ? 1 : 0,
-          opacity: disabled ? 0.6 : 1,
-          backgroundColor: variantStyles.backgroundColor,
-          borderColor: variantStyles.borderColor,
-          paddingVertical: sizeStyles.paddingVertical,
-          paddingHorizontal: sizeStyles.paddingHorizontal,
-          width: fullWidth ? '100%' : 'auto',
-        },
-        style,
-      ]}
-      {...props}
+      {...rest}
     >
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variantStyles.textColor}
-          style={{ marginRight: title ? 8 : 0 }}
+          color={
+            variant === 'outline' || variant === 'ghost'
+              ? '#11CBD7'
+              : '#FFFFFF'
+          }
+          className="mr-2"
         />
-      ) : (
-        icon &&
-        iconPosition === 'left' && (
-          <View style={{ marginRight: 8 }}>{icon}</View>
-        )
-      )}
-      
+      ) : icon && iconPosition === 'left' ? (
+        <Text className="mr-2">{icon}</Text>
+      ) : null}
+
       <Text
-        style={{
-          color: variantStyles.textColor,
-          fontSize: sizeStyles.fontSize,
-          fontFamily: FONTS.medium,
-          textAlign: 'center',
-        }}
+        className={`font-rubik-medium text-center
+                   ${textSizeClasses[size]} 
+                   ${textVariantClasses[variant]}`}
       >
-        {title}
+        {children}
       </Text>
-      
-      {icon && iconPosition === 'right' && !loading && (
-        <View style={{ marginLeft: 8 }}>{icon}</View>
-      )}
+
+      {icon && iconPosition === 'right' && !loading ? (
+        <Text className="ml-2">{icon}</Text>
+      ) : null}
     </TouchableOpacity>
   );
 };
-
-export default Button;
