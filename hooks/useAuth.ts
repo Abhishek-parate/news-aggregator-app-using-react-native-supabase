@@ -11,7 +11,7 @@ export const useAuth = () => {
 
   useEffect(() => {
     // Get current session
-    const getCurrentSession = async () => {
+    const getSession = async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session?.user) {
         setUser(supabase.auth.getUser());
@@ -21,7 +21,7 @@ export const useAuth = () => {
       }
     };
     
-    getCurrentSession();
+    getSession();
 
     // Listen for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -33,7 +33,7 @@ export const useAuth = () => {
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);
           setIsAdmin(false);
-          router.replace('/login');
+          setLoading(false);
         }
       }
     );
@@ -79,10 +79,9 @@ export const useAuth = () => {
         throw error;
       }
       
-      // Navigation will be handled by the auth state change listener
-    } catch (error) {
-      console.error('Error signing in:', error);
-      throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -116,10 +115,9 @@ export const useAuth = () => {
         }
       }
       
-      // Navigation will be handled by the auth state change listener
-    } catch (error) {
-      console.error('Error signing up:', error);
-      throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -134,10 +132,10 @@ export const useAuth = () => {
         throw error;
       }
       
-      // Navigation will be handled by the auth state change listener
-    } catch (error) {
-      console.error('Error signing out:', error);
-      throw error;
+      router.replace('/login');
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -147,17 +145,43 @@ export const useAuth = () => {
     try {
       setLoading(true);
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'newsaggregator://reset-password',
+        redirectTo: 'yourapp://reset-password',
       });
       
       if (error) {
         throw error;
       }
       
-      return true;
-    } catch (error) {
-      console.error('Error resetting password:', error);
-      throw error;
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateProfile = async (updates: Partial<Profile>) => {
+    try {
+      setLoading(true);
+      const { data: user } = await supabase.auth.getUser();
+      
+      if (!user.user) {
+        throw new Error('No user logged in');
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.user.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      await fetchProfile(user.user.id);
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
     } finally {
       setLoading(false);
     }
@@ -172,5 +196,6 @@ export const useAuth = () => {
     signUp,
     signOut,
     resetPassword,
+    updateProfile,
   };
 };
